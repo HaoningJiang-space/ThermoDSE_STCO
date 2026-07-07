@@ -307,7 +307,7 @@ class GemmLayer(Layer):
         # 2D convolution across all ifmap channels.
         return self.smtxA[2]
     
-    def total_filter_size(self, word_bytes):
+    def total_filter_size(self, word_bytes=1):
         return self.total_mtxB_size(word_bytes)
 
     def total_mtxB_size(self, word_bytes):
