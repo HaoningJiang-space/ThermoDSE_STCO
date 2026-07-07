@@ -1,5 +1,6 @@
 from .tsmc28_lib import *
-import math 
+from .tech_params import TechParams
+import math
 
 def mtxu_settting_gen(smtxu, area_scale=1, energy_scale=1, lib_type='28nm'):
     if lib_type == '28nm':
@@ -47,21 +48,22 @@ def regf_setting_gen(capacity, area_scale=1, energy_scale=1, lib_type='28nm'):
     area = regf_model_unit.area * scale / area_scale
     return area, regf_model_unit.rcost/energy_scale, regf_model_unit.wcost/energy_scale
 
-def nop_setting_gen(ics, nop_bw):
-    ## refer to the paper SIMBA's NoP GRS, energy range of NoP is [0.8, 1.3] pJ/bit
+def nop_setting_gen(ics, nop_bw, tech: TechParams = None):
+    ## D2D interconnect technology -- see TechParams.d2d for defaults/references.
     ## The ics range is [0.5, 3.5] mm
-    ## 25GB/s/pin, each Pin area 403*202 um^2
+    if tech is None:
+        tech = TechParams()
     if ics < 0.5 or ics > 3.5:
         raise ValueError(f'Inter-chiplet Space ranges from 0.5mm to 5mm, the input ICS is {ics} mm')
-    # nop_cost = (1.3 - 0.8) / (3.5 - 0.5) * ics + 0.8
-    nop_cost = 1.17
-    nop_area = 403*202 * nop_bw / 25
+    nop_cost = tech.d2d.energy_per_bit_pJ
+    nop_area = tech.d2d.pin_area_um2 * nop_bw / tech.d2d.bandwidth_density_GBps_per_pin
     return nop_area, nop_cost
 
-def yield_setting_gen(area_per_chiplet):
+def yield_setting_gen(area_per_chiplet, tech: TechParams = None):
     # area_per_chiplet: unit: m^2
-    ## yield model: Y = (1 + A * D0/alpha) ^ (-alpha)
-    ## 14nm node: D0 =0.08 cm-2, alpha = 10
-    D0 = 0.08
-    alpha = 10
+    ## yield model: Y = (1 + A * D0/alpha) ^ (-alpha) -- see TechParams.yield_model for defaults/references.
+    if tech is None:
+        tech = TechParams()
+    D0 = tech.yield_model.defect_density_per_cm2
+    alpha = tech.yield_model.cluster_alpha
     return (1 + area_per_chiplet * 10**4 * D0 / alpha ) ** (-alpha)

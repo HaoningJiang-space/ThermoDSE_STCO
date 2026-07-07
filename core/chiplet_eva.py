@@ -10,14 +10,18 @@ from core.evaluator import Evaluator
 from core.statistic import Statistic
 from core.gen_floorplan import floorplan_generator, floorplan_generator_3D
 from core.gen_hw_setting import *
+from core.tech_params import TechParams
 from core.util import find_hotpoint
 
 class chiplet_evaluator:
 
-    def __init__(self , hotspot_path, sim_path ,sys_info:list, thermal_map = True , baseline1=False, baseline2=False, baseline3= False,wkld_idpdt = False, clock_freq = 1.8e9):
+    def __init__(self , hotspot_path, sim_path ,sys_info:list, thermal_map = True , baseline1=False, baseline2=False, baseline3= False,wkld_idpdt = False, clock_freq = 1.8e9, tech: TechParams = None):
         # baseline 1: chiplet-gym, not data buffering
         # baseline 2: TESA, not NoP/NoC
         # wkld_idpdt: peak temp. is max(peak_temp)
+        # tech: technology assumptions (D2D interconnect energy, yield/defect-density model).
+        # Defaults to TechParams(), which reproduces ThermoDSE's original fixed-technology behavior.
+        self.tech = tech if tech is not None else TechParams()
         self.baseline1 = baseline1
         self.baseline2 = baseline2
         self.baseline3 = baseline3
@@ -60,7 +64,7 @@ class chiplet_evaluator:
         self.noc_bw = sys_info[8]
         # nop_link area
         if baseline2: self.nop_bw = self.dram_bw_design // (self.chipletX * self.chipletY) 
-        nop_area_link, nop_bit_cost = nop_setting_gen(self.chiplet_intvl * 1000, self.nop_bw)
+        nop_area_link, nop_bit_cost = nop_setting_gen(self.chiplet_intvl * 1000, self.nop_bw, tech=self.tech)
         if self.chipletCx == 1 or self.baseline2:
             nop_area_x = nop_area_link * 0 * 1e-12 ## um^2 -> mm^2
         elif self.chipletCx == 2:
@@ -161,7 +165,7 @@ class chiplet_evaluator:
         latency_nn_max = 0
         for die_h in self.die_h_list:
             for die_w in self.die_w_list:
-                y_tmp = yield_setting_gen(die_h * die_w + self.nop_area) 
+                y_tmp = yield_setting_gen(die_h * die_w + self.nop_area, tech=self.tech)
                 self.die_yield += y_tmp * (die_h * die_w / (sum(self.die_h_list) * sum(self.die_w_list)))
                 # print(f'compute area:{die_h * die_w}, yeild:{y_tmp}')
         for i, net in enumerate(self.nets):
