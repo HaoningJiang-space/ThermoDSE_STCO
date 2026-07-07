@@ -114,13 +114,14 @@ class chiplet_evaluator:
         area_factor =  4.375  * pr_density
         energy_factor = 1.947
         smtxu = (self.mtxu_h, self.mtxu_w)
-        ubuf_area, ubuf_rcost, ubuf_wcost = sram_setting_gen(self.ubuf_size,area_factor,energy_factor)
-        l0a_area, l0a_rcost, l0a_wcost = sram_setting_gen(self.l0a_size,area_factor / 2,energy_factor)
-        l0b_area, l0b_rcost, l0b_wcost = sram_setting_gen(self.l0b_size,area_factor / 2,energy_factor)
-        l0c_area, l0c_rcost, l0c_wcost = regf_setting_gen(self.l0c_size,area_factor,energy_factor)
-        l1c_area, l1c_rcost, l1c_wcost = sram_setting_gen(self.l1c_size,area_factor / 2,energy_factor)
-        mtxu_area, mtxu_cost = mtxu_settting_gen(smtxu, area_factor, energy_factor)
-        vecu_area, vecu_cost = vecu_settting_gen(self.vecu, area_factor ,energy_factor)
+        lib_type = self.tech.lib_type
+        ubuf_area, ubuf_rcost, ubuf_wcost = sram_setting_gen(self.ubuf_size,area_factor,energy_factor,lib_type=lib_type)
+        l0a_area, l0a_rcost, l0a_wcost = sram_setting_gen(self.l0a_size,area_factor / 2,energy_factor,lib_type=lib_type)
+        l0b_area, l0b_rcost, l0b_wcost = sram_setting_gen(self.l0b_size,area_factor / 2,energy_factor,lib_type=lib_type)
+        l0c_area, l0c_rcost, l0c_wcost = regf_setting_gen(self.l0c_size,area_factor,energy_factor,lib_type=lib_type)
+        l1c_area, l1c_rcost, l1c_wcost = sram_setting_gen(self.l1c_size,area_factor / 2,energy_factor,lib_type=lib_type)
+        mtxu_area, mtxu_cost = mtxu_settting_gen(smtxu, area_factor, energy_factor,lib_type=lib_type)
+        vecu_area, vecu_cost = vecu_settting_gen(self.vecu, area_factor ,energy_factor,lib_type=lib_type)
         ubuf = Onchip_buffer('ubuf', self.ubuf_size, ubuf_rcost, ubuf_wcost, ubuf_area, self.ubuf_bw)
         l0a = Onchip_buffer('l0a', self.l0a_size, l0a_rcost, l0a_wcost, l0a_area, self.l0a_bw)
         l0b = Onchip_buffer('l0b', self.l0b_size, l0b_rcost, l0b_wcost, l0b_area , self.l0b_bw)
