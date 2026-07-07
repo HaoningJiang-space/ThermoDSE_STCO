@@ -15,7 +15,7 @@ from core.util import find_hotpoint
 
 class chiplet_evaluator:
 
-    def __init__(self , hotspot_path, sim_path ,sys_info:list, thermal_map = True , baseline1=False, baseline2=False, baseline3= False,wkld_idpdt = False, clock_freq = 1.8e9, tech: TechParams = None):
+    def __init__(self , hotspot_path, sim_path ,sys_info:list, thermal_map = True , baseline1=False, baseline2=False, baseline3= False,wkld_idpdt = False, clock_freq = 1.8e9, tech: TechParams = None, workload_subset: list = None):
         # baseline 1: chiplet-gym, not data buffering
         # baseline 2: TESA, not NoP/NoC
         # wkld_idpdt: peak temp. is max(peak_temp)
@@ -27,14 +27,25 @@ class chiplet_evaluator:
         self.baseline3 = baseline3
         self.thermal_map = thermal_map
         self.wkld_idpdt = wkld_idpdt
-        self.nets = ['resnet50', 'googlenet', 'unet', 'mobilenet', 'yolo', 'transformer']
-        self.b_tot = [2, 2, 2, 4, 4, 1]
-        self.b_exe = [2, 2, 1, 2, 4, 1]
-        self.sparsty = [0.217, 0.375, 0.453, 0.368, 0.009, 0]
-        # self.nets = ['googlenet']
-        # self.b_tot = [2,2,4]
-        # self.b_exe = [2,1,2]
-        # self.sparsty = [ 0.375, 0.368]
+        all_nets = ['resnet50', 'googlenet', 'unet', 'mobilenet', 'yolo', 'transformer']
+        all_b_tot = [2, 2, 2, 4, 4, 1]
+        all_b_exe = [2, 2, 1, 2, 4, 1]
+        all_sparsty = [0.217, 0.375, 0.453, 0.368, 0.009, 0]
+        # workload_subset: evaluate only these networks instead of all 6 -- a cheap-fidelity
+        # proxy (see docs/algorithm.md's BiSTCO-TRACE). Must be validated (rank correlation /
+        # top-K recall against the full 6-workload score) before trusting it to screen candidates;
+        # defaults to None, which reproduces the original full-6-workload behavior exactly.
+        if workload_subset is None:
+            self.nets, self.b_tot, self.b_exe, self.sparsty = all_nets, all_b_tot, all_b_exe, all_sparsty
+        else:
+            unknown = set(workload_subset) - set(all_nets)
+            if unknown:
+                raise ValueError(f'workload_subset contains unknown network(s): {unknown}')
+            indices = [all_nets.index(name) for name in workload_subset]
+            self.nets = [all_nets[i] for i in indices]
+            self.b_tot = [all_b_tot[i] for i in indices]
+            self.b_exe = [all_b_exe[i] for i in indices]
+            self.sparsty = [all_sparsty[i] for i in indices]
         self.clock_freq = clock_freq
         # self.interposer_cons = interposer_cons
         self.hotspot_path = hotspot_path
