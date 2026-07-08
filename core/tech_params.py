@@ -48,6 +48,30 @@ class YieldParams:
 
 
 @dataclass(frozen=True)
+class ThermalParams:
+    """Package/cooling-solution thermal resistance to ambient -- HotSpot's own
+    `-r_convec` config parameter (K/W), the dominant knob for "how good is the
+    cooling solution" (large heatsink+fan or liquid cooling gives a low value;
+    a passive/small-form-factor package gives a high one).
+
+    Historical default (convection_resistance_K_per_W=0.1) reproduces
+    HotSpot's own example.config value -- not previously exposed as a
+    TechParams field (unlike d2d/yield_model, this was never varied by any
+    caller before this field existed). Published reference for the low
+    (good-cooling) end: Choi, Jeong, Yoo, Seo, "A new CPU cooler design based
+    on an active cooling heatsink combined with heat pipes," Applied Thermal
+    Engineering 44 (2012) 50-56, doi:10.1016/j.apthermaleng.2012.03.027 --
+    measures 0.11-0.19 K/W for a high-end commercial air-cooling assembly
+    (heatsink+fan), directly bracketing this default. The high (poor/passive-
+    cooling) end is NOT YET literature-grounded as of this writing despite a
+    genuine search effort -- see project memory (third_axis_thermal_scoping)
+    for what was tried; do not treat `stco/tech_space.py`'s current high
+    bound as a citable number until that's resolved.
+    """
+    convection_resistance_K_per_W: float = 0.1
+
+
+@dataclass(frozen=True)
 class TechParams:
     """Full technology-assumption bundle threaded through the hardware cost
     model. `lib_type` is passed straight through to the existing
@@ -57,4 +81,5 @@ class TechParams:
     """
     d2d: D2DParams = field(default_factory=D2DParams)
     yield_model: YieldParams = field(default_factory=YieldParams)
+    thermal: ThermalParams = field(default_factory=ThermalParams)
     lib_type: str = '28nm'
