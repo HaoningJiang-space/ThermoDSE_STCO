@@ -354,19 +354,57 @@ class TaskDAG():
                             # print(task)
 
     def create_edges(self, nn: Network):
+        # A task can only ever depend on tasks from its own layer's KNOWN predecessor
+        # layers (nn.prevs()), never from every other layer in the network -- so index
+        # tasks by layer_name once, up front, instead of the full self.task_dict.keys() x
+        # self.task_dict.keys() all-pairs scan below used to do. That scan was O(n^2) in
+        # the number of tasks (2116 tasks -> ~4.5M pairs for a real Transformer network)
+        # and was the dominant per-evaluation cost end to end (measured: ~6.8s of a ~8.8s
+        # per-network evaluate() call) -- see seed_concurrency_cuda_unsafe_finding in
+        # project memory for the full profiling writeup. Candidates outside this index are
+        # provably no-ops in the original loop too: every effect below is gated on
+        # `layer_name2 in ifm_prevs` or (for GemmTaskNode) `layer_name2 in wgt_prevs`, so a
+        # name_tmp whose layer is in neither contributes nothing either way.
+        tasks_by_layer = {}
+        for name_tmp, task_node_tmp in self.task_dict.items():
+            tasks_by_layer.setdefault(task_node_tmp.layer_name, []).append(name_tmp)
+
         for node_name in self.task_dict.keys():
             task_node = self.task_dict[node_name]
             if 'blk1_0_dw1.0.3.0.0' in node_name:
                 print(1)
             prevs = tuple()
             # print(f'ifm range: {task_node.fromrange}')
-            for name_tmp in self.task_dict.keys():  ## traverse all task node to find prevs
+            layer_name1 = task_node.layer_name
+            # Hoisted out of the inner loop -- layer_name1 doesn't change per name_tmp, so
+            # this was previously being recomputed on every one of the O(n) inner iterations
+            # for no reason (n times more than needed, compounding the O(n^2) scan above).
+            ifm_prevs, wgt_prevs = nn.prevs(layer_name1)
+            # print(ifm_prevs, wgt_prevs)
+            candidate_names = []
+            seen = set()  # a layer could appear in both ifm_prevs and wgt_prevs -- dedup,
+            # since the original single-pass-over-everything loop never visited any
+            # name_tmp twice either.
+            for p in ifm_prevs:
+                if p is None:
+                    continue
+                for name_tmp in tasks_by_layer.get(p, ()):
+                    if name_tmp not in seen:
+                        seen.add(name_tmp)
+                        candidate_names.append(name_tmp)
+            if isinstance(task_node, GemmTaskNode) and wgt_prevs is not None:
+                for p in wgt_prevs:
+                    if p is None:
+                        continue
+                    for name_tmp in tasks_by_layer.get(p, ()):
+                        if name_tmp not in seen:
+                            seen.add(name_tmp)
+                            candidate_names.append(name_tmp)
+
+            for name_tmp in candidate_names:  ## only known predecessor-layer tasks, not every task node
                 if name_tmp != node_name:
                     task_node_tmp = self.task_dict[name_tmp]
-                    layer_name1 = task_node.layer_name
                     layer_name2 = task_node_tmp.layer_name
-                    ifm_prevs, wgt_prevs = nn.prevs(layer_name1)
-                    # print(ifm_prevs, wgt_prevs)
                     if layer_name2 in ifm_prevs:
                         if isinstance(nn[layer_name1], groupConvLayer):
                             assert len(ifm_prevs) == nn[layer_name1].numG
