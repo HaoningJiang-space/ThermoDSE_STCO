@@ -300,19 +300,32 @@ def run_command(command:list):
         print("error:", e)
         print("std error:")
         print(e.stderr)
+        raise
 
 def find_hotpoint(file,unitK=True):
     grid_file = open(file, 'r')
     content = grid_file.readlines()
     max_temp = 0
     max_temp_layer = 0
+    layer_num = 0
     for field in content:
         str_tmp = field.split()
+        if len(str_tmp) < 2:
+            continue
         name = str_tmp[0]
         if 'Layer' in name:
-            layer_num = int(str_tmp[1][0:-1])
+            try:
+                layer_num = int(str_tmp[1].rstrip(':'))
+            except ValueError:
+                continue
         else:
-            grid_temp = float(str_tmp[1][0:-1])
+            token = str_tmp[1].strip().rstrip(',')
+            while token and token[-1] not in '0123456789.eE+-':
+                token = token[:-1]
+            try:
+                grid_temp = float(token)
+            except ValueError:
+                continue
             if max_temp < grid_temp:
                 max_temp = grid_temp
                 max_temp_layer = layer_num
@@ -326,6 +339,5 @@ def find_hotpoint(file,unitK=True):
 
 
         
-
 
 

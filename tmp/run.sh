@@ -17,6 +17,7 @@ rm -f "$sim_path"/outputs/gcc*
 "$hotspot_bin" \
   -c "$config_file" \
   -p "$ptrace_file" \
+  -f "$flp_file" \
   -grid_layer_file "$sim_path/floorplan/example.lcf" \
   -materials_file "$sim_path/example.materials" \
   -model_type grid \
