@@ -1,5 +1,6 @@
 import os
 import math
+from .topology import balanced_partition_sizes
 from .util import run_command
 
 
@@ -358,14 +359,10 @@ class floorplan_generator_3D():
         # generate the entire floorplan with chiplet system
         outFile = open(sys_flp_path,'w')
         self.ics = ics
-        xcore_list = [xx // xcut for _ in range(xcut)]
-        ycore_list = [yy // ycut for _ in range(ycut)]
+        xcore_list = list(balanced_partition_sizes(xx, xcut))
+        ycore_list = list(balanced_partition_sizes(yy, ycut))
         die_h_list = []
         die_w_list = []
-        for i in range(xx%xcut):
-            xcore_list[i] +=1
-        for i in range(yy%ycut):
-            ycore_list[i] +=1
         for xcore in xcore_list:
             die_w = self.core_w * xcore + NoC_space * (xcore - 1)
             die_w_list.append(die_w)
@@ -457,6 +454,5 @@ class floorplan_generator_3D():
                           
                          
         
-
 
 

@@ -1,4 +1,5 @@
 from .bufmanage import bufManager
+from .topology import balanced_partition_sizes, partition_boundaries, partition_index
 
 class Nop():
     '''
@@ -26,8 +27,10 @@ class Nop():
         self.link_hops = [0] * shape[1] * (shape[0] + 2) * 4  # each core has 4 links for 4 dirctions (0: right, 1: down, 2: left, 3: up)
         self.xcut = xcut
         self.ycut = ycut
-        self.x_step = int(self.shape[0]/xcut)
-        self.y_step =int(self.shape[1]/ycut)
+        self.x_partition_sizes = balanced_partition_sizes(self.shape[0], xcut)
+        self.y_partition_sizes = balanced_partition_sizes(self.shape[1], ycut)
+        self.x_boundaries = partition_boundaries(self.x_partition_sizes)
+        self.y_boundaries = partition_boundaries(self.y_partition_sizes)
 
         self.nop_link_idx = []
         for y in range(self.shape[1]):
@@ -35,17 +38,14 @@ class Nop():
             self.nop_link_idx.append(self.get_link_idx(1,y,self.LEFT))
             self.nop_link_idx.append(self.get_link_idx(shape[0]  ,y, self.RIGHT))
             self.nop_link_idx.append(self.get_link_idx(shape[0]+1,y, self.LEFT))
-        if xcut > 1:
-            x_step = int(self.shape[0]/xcut)
-            for x in range(x_step, self.shape[0], x_step):
-                for y in range(self.shape[1]):
-                    self.nop_link_idx.append(self.get_link_idx(x-1+1,y, self.RIGHT )) # +1 because the first row is DRAM PHY DIE
-                    self.nop_link_idx.append(self.get_link_idx(x-1+2,y, self.LEFT )) 
-        if ycut > 1:
-            for y in range(self.y_step, self.shape[1], self.y_step):
-                for x in range(self.shape[0]):
-                    self.nop_link_idx.append(self.get_link_idx(x+1, y-1  , self.DOWN))
-                    self.nop_link_idx.append(self.get_link_idx(x+1, y-1+1, self.UP))
+        for x in self.x_boundaries:
+            for y in range(self.shape[1]):
+                self.nop_link_idx.append(self.get_link_idx(x,y, self.RIGHT))
+                self.nop_link_idx.append(self.get_link_idx(x+1,y, self.LEFT))
+        for y in self.y_boundaries:
+            for x in range(self.shape[0]):
+                self.nop_link_idx.append(self.get_link_idx(x+1, y-1, self.UP))
+                self.nop_link_idx.append(self.get_link_idx(x+1, y, self.DOWN))
 
     def read_from_DRAM(self, dst, volume):
         cluster_idx = []
@@ -181,7 +181,7 @@ class Nop():
         return size * (abs(src_cidx[0] - dst_cidx[0]) + abs(src_cidx[1] - dst_cidx[1]))
     
     def get_link_idx(self, x, y, dir):
-        return (y * self.shape[0] + x) * 4 + dir
+        return (y * (self.shape[0] + 2) + x) * 4 + dir
 
     def get_tot_noc_hops(self):
         return self.tot_noc_hops
@@ -229,52 +229,30 @@ class Nop():
         return (cidx[0] + 1, cidx[1])
     
     def NoP_link_calc(self, src, dst):
-        x_max = max(src[0], dst[0])
-        x_min = min(src[0], dst[0])
-        x_NoP_hop = 0
-        y_NoP_hop =0
-        # caculate the DRAM link first
-        if (x_min == 0 and x_max >0):   ## only DRAM in x==0 and x
-            x_NoP_hop +=1
-            x_min += 1
-        if(x_max == self.shape[0] + 1 and x_min < x_max):
-            x_NoP_hop +=1
-            x_max -= 1
-        if (x_max-x_min) >= self.x_step:  # since for x direction, core start from 1 to self.shape[0] + 1
-            x_nearest_interval = x_max - x_max % self.x_step
-            assert x_nearest_interval > 0
-            if x_nearest_interval > x_min:
-                x_NoP_hop += 1 + int((x_nearest_interval - 1 - x_min) / self.x_step)
-        
-        y_max = max(src[1], dst[1])
-        y_min = min(src[1], dst[1])
-        if (y_max-y_min) >= self.y_step:   # for y direction, core start from 0 to self.shape[1]
-            y_nearest_interval = y_max - y_max % self.y_step
-            assert y_nearest_interval > 0
-            if y_nearest_interval > y_min:
-                y_NoP_hop = 1 + int((y_nearest_interval - 1 - y_min) / self.y_step)
-         
-        return x_NoP_hop + y_NoP_hop    
+        return (
+            abs(self._x_partition_position(src[0]) - self._x_partition_position(dst[0]))
+            + abs(self._y_partition_position(src[1]) - self._y_partition_position(dst[1]))
+        )
 
     def NoP_link_calc_dir(self, x1, x2, isX:bool):
-        step = self.x_step if isX else self.y_step
-        x_max = max(x1,x2)
-        x_min = min(x1,x2)
-        x_NoP_hop = 0
-        if isX and x_min ==0 and x_max >0:
-            x_NoP_hop += 1  ## X == 0 only have DRAM
-            x_min += 1
-        if x_max == self.shape[0] + 1 and x_min < x_max:
-            x_NoP_hop += 1
-            x_max -= 1
-        if (x_max - x_min) >= step:
-            x_nearest_interval = x_max - x_max % step
-            assert x_nearest_interval > 0
-            if x_nearest_interval > x_min:
-                x_NoP_hop += 1 + int((x_nearest_interval - 1 - x_min) / step)
-        return x_NoP_hop
+        if isX:
+            return abs(self._x_partition_position(x1) - self._x_partition_position(x2))
+        return abs(self._y_partition_position(x1) - self._y_partition_position(x2))
+
+    def _x_partition_position(self, cluster_x):
+        if cluster_x == 0:
+            return -1
+        if cluster_x == self.shape[0] + 1:
+            return len(self.x_partition_sizes)
+        if cluster_x < 0 or cluster_x > self.shape[0] + 1:
+            raise ValueError("cluster_x is outside the cluster range")
+        return partition_index(cluster_x - 1, self.x_partition_sizes)
+
+    def _y_partition_position(self, cluster_y):
+        if cluster_y < 0 or cluster_y >= self.shape[1]:
+            raise ValueError("cluster_y is outside the cluster range")
+        return partition_index(cluster_y, self.y_partition_sizes)
     
     def __str__(self):
         str_ = 'total hops: ' + str(self.tot_hops) + '. total DRAM access: ' + str(self.tot_DRAM_access)+'\n'
         return str_
-
