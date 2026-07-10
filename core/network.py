@@ -233,11 +233,16 @@ class Network():
         generate the Breadth-first-Search DAG layer index
         '''
         self.layer_idx_bfs = OrderedDict()
-        layer_finished = [self.INPUT_LAYER_KEY]
+        # ext_dict layers (e.g. LSTM cells' recurrent-state placeholders added via add_ext())
+        # are already-available inputs like INPUT_LAYER_KEY, so seed them as finished too --
+        # without this, any layer depending on one can never be classified (its prevs-name is
+        # never in layer_finished), and the loop below asserts on the first empty round.
+        ext_names = list(self.ext_dict.keys())
+        layer_finished = [self.INPUT_LAYER_KEY] + ext_names
         layer_name_list = list(self.layer_dict.keys()).copy()
         layer_name_list.remove(self.INPUT_LAYER_KEY)
         i = 0
-        while len(layer_name_list) != len(layer_finished) - 1:
+        while len(layer_name_list) != len(layer_finished) - 1 - len(ext_names):
             classified = []
             finish_tmp = []
             for layer in layer_name_list:
