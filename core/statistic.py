@@ -191,14 +191,40 @@ class Statistic:
         plt.show()
     
     def get_nn_cost(self, nn_name):
-        latency_tot = np.sum(self.latency_dict[nn_name])
-        e_nop = np.sum(self.nop_dict[nn_name])
-        e_noc = np.sum(self.noc_dict[nn_name])
-        e_dram = np.sum(self.dram_dict[nn_name])
-        e_comp = np.sum(self.core_dict[nn_name][:, :, self.NAME_LIST.index('mtxu')])  +  np.sum(self.core_dict[nn_name][:, :, self.NAME_LIST.index('vecu')])
-        e_core = np.sum(self.core_dict[nn_name]) 
-        e_tot = e_nop + e_noc + e_dram + e_core - e_comp # exclude the energy of computing units, since they are always fixed
-        return latency_tot, e_tot
+        breakdown = self.get_nn_breakdown(nn_name)
+        return breakdown['latency_cycles'], breakdown['modeled_energy_pj_excluding_compute']
+
+    def get_nn_breakdown(self, nn_name):
+        """Return a JSON-safe per-workload latency/energy snapshot.
+
+        The historical optimization metric returned by :meth:`get_nn_cost`
+        excludes MTXU/VECU compute energy.  Export both that exact boundary
+        and the inclusive component total so downstream STCO code cannot
+        accidentally label the legacy quantity as generic total energy.
+        Values are raw simulator pJ/cycles; unit conversion belongs to the
+        caller that aggregates workloads.
+        """
+        if nn_name not in self.latency_dict:
+            raise KeyError(f'unknown workload execution name: {nn_name}')
+
+        core = self.core_dict[nn_name]
+        energy_pj = {
+            'nop': float(np.sum(self.nop_dict[nn_name])),
+            'noc': float(np.sum(self.noc_dict[nn_name])),
+            'dram': float(np.sum(self.dram_dict[nn_name])),
+            'compute': float(np.sum(core[:, :, self.MTXU]) + np.sum(core[:, :, self.VECU])),
+            'ubuf': float(np.sum(core[:, :, self.UBUF])),
+            'input_buffers': float(np.sum(core[:, :, self.L0A]) + np.sum(core[:, :, self.L0B])),
+            'output_buffers': float(np.sum(core[:, :, self.L0C]) + np.sum(core[:, :, self.L1C])),
+        }
+        total_including_compute = sum(energy_pj.values())
+        modeled_excluding_compute = total_including_compute - energy_pj['compute']
+        return {
+            'latency_cycles': float(np.sum(self.latency_dict[nn_name])),
+            'energy_pj': energy_pj,
+            'modeled_energy_pj_excluding_compute': float(modeled_excluding_compute),
+            'total_energy_pj_including_compute': float(total_including_compute),
+        }
     
     def gen_ptrace(self, nn_name, gen_path='../tmp/ptrace'):
         latency = np.sum(self.latency_dict[nn_name])/self.clk_freq

@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 
 from nns import import_network
@@ -129,6 +131,7 @@ class chiplet_evaluator:
         self.latency = 0
         self.die_yield = 0
         self.peak_temp = 0
+        self.workload_metrics = []
 
     def generate_hardware(self):
         # l0a, l0b, l0c are ping-pong buffer, thus the area should be mutiplied 2
@@ -231,7 +234,37 @@ class chiplet_evaluator:
             if latency_tmp > latency_nn_max:
                 latency_nn_max = latency_tmp
             # print(f'{net_name}-> latency:{latency_tmp}, energy:{energy_tmp}, current_max:{latency_nn_max}')
-            self.monitor.cost_times(network.net_name, batch_factor)
+            self.monitor.cost_times(net_name, batch_factor)
+            workload_metrics = self.monitor.get_nn_breakdown(net_name)
+            energy_pj = workload_metrics['energy_pj']
+
+            def traffic_from_energy(energy, unit_cost):
+                if unit_cost > 0:
+                    return energy / unit_cost
+                if energy == 0:
+                    return 0.0
+                raise ValueError('non-zero communication energy has a zero unit cost')
+
+            nop_byte_hops = traffic_from_energy(energy_pj['nop'], self.nop_cost)
+            noc_byte_hops = traffic_from_energy(energy_pj['noc'], self.noc_cost)
+            dram_bytes = traffic_from_energy(energy_pj['dram'], self.dram_cost)
+            workload_metrics.update({
+                'workload': net,
+                'monitor_name': net_name,
+                'batch_factor': batch_factor,
+                'traffic': {
+                    'nop_byte_hops': nop_byte_hops,
+                    'nop_bit_hops': nop_byte_hops * 8,
+                    'noc_byte_hops': noc_byte_hops,
+                    'dram_bytes': dram_bytes,
+                },
+                'unit_cost_pj': {
+                    'nop_per_byte_hop': self.nop_cost,
+                    'noc_per_byte_hop': self.noc_cost,
+                    'dram_per_byte': self.dram_cost,
+                },
+            })
+            self.workload_metrics.append(workload_metrics)
             if self.wkld_idpdt:
                 self.monitor.gen_all_ptrace_3D(isRunBaseline3=self.baseline3, gen_path=self.sim_path +'/ptrace')
                 self.flp_generator.run_hotspot(draw_fig=draw_fig)
@@ -276,6 +309,10 @@ class chiplet_evaluator:
 
     def evaluate_edyp(self):
         return self.latency, self.energy, self.die_yield
+
+    def evaluate_breakdown(self):
+        """Return structured per-workload metrics captured before cleanup."""
+        return copy.deepcopy(self.workload_metrics)
 
     def evaluate_area(self):
         return self.sys_h * self.sys_w + self.get_IO_die_area()
