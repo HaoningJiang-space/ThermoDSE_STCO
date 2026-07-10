@@ -44,5 +44,5 @@ for l in range(NL):
     X = H
 
 # log(p), softmax.
-NN.add('Wd', EltwiseLayer(1000, 1, 1), prevs=(X,))
+NN.add('Wd', EltwiseLayer(1000, 1, 1), ifm_prevs=(X,))
 
