@@ -15,6 +15,10 @@ sys.path.append('../')
 
 from core.chiplet_eva import chiplet_evaluator
 
+DEFAULT_HOTSPOT_PATH = '../../HotSpot'
+DEFAULT_STATS_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'stats', 'archs')
+
 def argparser():
     ''' Argument parser. '''
 
@@ -30,6 +34,11 @@ def argparser():
                     help='TESA, not NoC/NoP')
     ap.add_argument('-sp', '--sim_path', type=str, default='../tmp',
                     help='thermal simulation path')
+    ap.add_argument('-hp', '--hotspot_path', type=str, default=DEFAULT_HOTSPOT_PATH,
+                    help='HotSpot checkout path')
+    ap.add_argument('-sd', '--stats_dir', type=str,
+                    default=DEFAULT_STATS_DIR,
+                    help='directory for per-step metric logs')
     ap.add_argument('-wi', '--wkld_idpdt', type=int, default=0,
                     help='peak temp. is max(peak_temp) ')
     return ap
@@ -83,7 +92,9 @@ def action_filter(actions, params, bounds):
     return actions_probs
     
 class CustomEnv(Env):
-    def __init__(self, process_id, sim_path, thermal_map, isRunBaseline1, isRunBaseline2, wkld_idpdt):
+    def __init__(self, process_id, sim_path, thermal_map, isRunBaseline1,
+                 isRunBaseline2, wkld_idpdt, hotspot_path=DEFAULT_HOTSPOT_PATH,
+                 stats_dir=None):
         self.process_id = process_id
         self.max_interposer_area = 0.0003       # unit m^2
         self.normlized_max_interposer_area = 1 # (Area/3)
@@ -103,6 +114,9 @@ class CustomEnv(Env):
         self.isRunBaseline1 = isRunBaseline1
         self.isRunBaseline2 = isRunBaseline2
         self.wkld_idpdt = wkld_idpdt
+        self.hotspot_path = hotspot_path
+        self.stats_dir = stats_dir or DEFAULT_STATS_DIR
+        os.makedirs(self.stats_dir, exist_ok=True)
 
     def reset(self):
         self.time_step = 0
@@ -123,7 +137,15 @@ class CustomEnv(Env):
         print(f'action before:{self.current_params}')
         sys_info = param_regulator(self.current_params)
         print(f'sys info:{sys_info}')
-        evaluator = chiplet_evaluator(hotspot_path='../../HotSpot', sim_path=self.sim_path, sys_info= sys_info, thermal_map=self.thermal_map,baseline1=self.isRunBaseline1, baseline2=self.isRunBaseline2,wkld_idpdt=self.wkld_idpdt)
+        evaluator = chiplet_evaluator(
+            hotspot_path=self.hotspot_path,
+            sim_path=self.sim_path,
+            sys_info=sys_info,
+            thermal_map=self.thermal_map,
+            baseline1=self.isRunBaseline1,
+            baseline2=self.isRunBaseline2,
+            wkld_idpdt=self.wkld_idpdt,
+        )
         evaluator.generate_hardware()
         delay, energy, die_yield=evaluator.evaluate()
         EDPY_cost = - energy * delay / die_yield # 需要归一化
@@ -135,16 +157,16 @@ class CustomEnv(Env):
         print(f'sys_info:{sys_info}, Area: {area*10000} cm^2, peak temp: {peak_temp}')
         # print(f'Area of Computing die: {compute_die_area}, IO die: {IO_die_area}')
         print(f'E: {energy} D: {delay}, Yield: {die_yield}, total area: {area}. The EDYP cost is {EDPY_cost}')
-        with open(os.path.join("/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/rl_opt/stats/archs", "Energy.txt"),"a") as f:
-            f.write(str(energy)+"\n")
-        with open(os.path.join("/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/rl_opt/stats/archs", "delay.txt"),"a") as f:
-            f.write(str(delay)+"\n")
-        with open(os.path.join("/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/rl_opt/stats/archs", "yield.txt"),"a") as f:
-            f.write(str(die_yield)+"\n")
-        with open(os.path.join("/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/rl_opt/stats/archs", "temp.txt"),"a") as f:
-            f.write(str(peak_temp)+"\n")
-        with open(os.path.join("/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/rl_opt/stats/archs", "area.txt"),"a") as f:
-            f.write(str(area)+"\n")
+        metric_values = {
+            "Energy.txt": energy,
+            "delay.txt": delay,
+            "yield.txt": die_yield,
+            "temp.txt": peak_temp,
+            "area.txt": area,
+        }
+        for filename, value in metric_values.items():
+            with open(os.path.join(self.stats_dir, filename), "a", encoding="utf-8") as f:
+                f.write(str(value)+"\n")
         next_obs = np.concatenate((np.array([area * 10000 /3, (peak_temp-319)/30]), self.current_params/np.array(self.action_upper_bound)))
         reward = r - max(0, (peak_temp - self.max_temperature))
 
@@ -166,7 +188,9 @@ class CustomEnv(Env):
         pass
 
 
-def make_env(rank, seed, sim_path, thermal_map, isRunBaseline1, isRunBaseline2, wkld_idpdt) -> Callable:
+def make_env(rank, seed, sim_path, thermal_map, isRunBaseline1, isRunBaseline2,
+             wkld_idpdt, hotspot_path=DEFAULT_HOTSPOT_PATH,
+             stats_dir=None) -> Callable:
     """
     Utility function for multiprocessed env.
 
@@ -178,7 +202,9 @@ def make_env(rank, seed, sim_path, thermal_map, isRunBaseline1, isRunBaseline2, 
     """
 
     def _init() -> gym.Env:
-        env = CustomEnv(rank, sim_path + "_" + str(rank), thermal_map, isRunBaseline1, isRunBaseline2, wkld_idpdt)
+        env = CustomEnv(
+            rank, sim_path + "_" + str(rank), thermal_map, isRunBaseline1,
+            isRunBaseline2, wkld_idpdt, hotspot_path, stats_dir)
         # env.reset(seed=seed+rank)
         env.reset()
         return env
@@ -194,6 +220,8 @@ if __name__ == '__main__':
     sim_path_name = arg.sim_path
     wkld_idpdt = arg.wkld_idpdt
     thermal_map = arg.thermal_aware_map
+    hotspot_path = arg.hotspot_path
+    stats_dir = arg.stats_dir
     if isRunBaseline1:
         target_arch = 'chiplet-gym'
     elif isRunBaseline2:
@@ -207,7 +235,11 @@ if __name__ == '__main__':
 
     seed = 0
     num_cpu = 8 # Number of processes to use
-    env = SubprocVecEnv([make_env(i, seed, sim_path_name, thermal_map, isRunBaseline1, isRunBaseline2, wkld_idpdt) for i in range(num_cpu)])
+    env = SubprocVecEnv([
+        make_env(i, seed, sim_path_name, thermal_map, isRunBaseline1,
+                 isRunBaseline2, wkld_idpdt, hotspot_path, stats_dir)
+        for i in range(num_cpu)
+    ])
     
     ################# warmup ###################
     # if arg.warmup:

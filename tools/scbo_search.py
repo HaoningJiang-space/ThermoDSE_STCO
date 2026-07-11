@@ -528,7 +528,7 @@ while not state.restart_triggered and count < 1000:  # Run until TuRBO converges
             f"{len(train_X)}) No feasible point yet! Smallest total violation: "
             f"{violation:.2e}, TR length: {state.length:.2e}"
         )
-    # torch.save(train_X, "/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/tools/scbo/train_X.pt")
-    # torch.save(train_Y, "/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/tools/scbo/train_Y.pt")
-    # torch.save(C1, "/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/tools/scbo/C1.pt")
-    # torch.save(C2, "/home/jpengai/WorkSpace/power_project/thermal_project/accDSE/tools/scbo/C2.pt")
+    # torch.save(train_X, "scbo/train_X.pt")
+    # torch.save(train_Y, "scbo/train_Y.pt")
+    # torch.save(C1, "scbo/C1.pt")
+    # torch.save(C2, "scbo/C2.pt")
